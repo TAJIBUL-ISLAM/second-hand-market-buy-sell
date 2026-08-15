@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReLoop — Marketplace for Second-Hand Items</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <div class="filters">
+    <select id="fCategory"><option value="">All categories</option></select>
+    <input type="number" id="fMin" placeholder="Min price" style="width:110px">
+    <input type="number" id="fMax" placeholder="Max price" style="width:110px">
+    <input type="text" id="fLocation" placeholder="Location" style="width:140px">
+    <button class="btn btn-primary btn-sm" id="applyFilters">Apply filters</button>
+    <button class="btn btn-outline btn-sm" id="saveSearchBtn">Save this search &amp; alert me</button>
+  </div>
+
+  <h2 id="resultsHeading">All listings</h2>
+  <div id="grid" class="listing-grid"></div>
+  <div id="emptyState" class="empty-state" style="display:none">
+    <h3>Nothing here yet</h3>
+    <p>Try widening your filters, or be the first to <a href="sell.html">list an item</a>.</p>
+  </div>
+</main>
+<footer class="site">ReLoop · Give it a second life. · Guwahati &amp; beyond</footer>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+
+async function loadListings() {
+  const q = params.get('q') || '';
+  const category = document.getElementById('fCategory').value;
+  const min_price = document.getElementById('fMin').value;
+  const max_price = document.getElementById('fMax').value;
+  const location_ = document.getElementById('fLocation').value;
+
+  const qs = new URLSearchParams();
+  if (q) qs.set('q', q);
+  if (category) qs.set('category', category);
+  if (min_price) qs.set('min_price', min_price);
+  if (max_price) qs.set('max_price', max_price);
+  if (location_) qs.set('location', location_);
+
+  document.getElementById('resultsHeading').textContent = q ? `Results for "${q}"` : 'All listings';
+
+  const listings = await apiFetch('/listings?' + qs.toString());
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  document.getElementById('emptyState').style.display = listings.length ? 'none' : 'block';
+
+  listings.forEach(l => {
+    const card = document.createElement('a');
+    card.href = 'listing.html?id=' + l.id;
+    card.className = 'tag-card';
+    card.innerHTML = `
+      ${l.photo ? `<img class="photo" src="${l.photo}" alt="${l.title}">` : `<div class="photo placeholder">No photo</div>`}
+      <div class="body">
+        <span class="cat">${l.category}</span>
+        <h3>${l.title}</h3>
+        <div class="price">${fmtPrice(l.price)}</div>
+        <div class="meta">${l.condition_grade} · ${l.location || 'Location not set'}</div>
+        <div class="meta">${l.seller_verified ? '<span class="verified-badge">✓ Verified seller</span>' : 'by ' + l.seller_name}</div>
+        <span class="co2-strip">🌱 ~${l.co2_saved_kg}kg CO₂ saved by reusing</span>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+document.getElementById('applyFilters').addEventListener('click', () => {
+  const url = new URL(location.href);
+  if (!params.get('q')) url.searchParams.delete('q');
+  history.replaceState(null, '', url);
+  loadListings();
+});
+
+document.getElementById('saveSearchBtn').addEventListener('click', async () => {
+  if (!requireLogin()) return;
+  await apiFetch('/wishlist/saved-search', {
+    method: 'POST',
+    body: JSON.stringify({
+      category: document.getElementById('fCategory').value || null,
+      keyword: params.get('q') || null,
+      max_price: document.getElementById('fMax').value || null,
+      location: document.getElementById('fLocation').value || null,
+    })
+  });
+  toast('Saved! We\'ll flag new matching listings for you.');
+});
+
+(async () => {
+  await initPage({ searchQuery: params.get('q') });
+  const catSel = document.getElementById('fCategory');
+  CATEGORIES.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c[0].toUpperCase() + c.slice(1);
+    catSel.appendChild(o);
+  });
+  loadListings();
+})();
+</script>
+</body>
+</html>

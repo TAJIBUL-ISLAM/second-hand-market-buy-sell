@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log in — ReLoop</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="container-narrow">
+  <h1>Log in</h1>
+  <div class="panel">
+    <form id="loginForm">
+      <div class="form-row"><label>Email</label><input type="email" id="email" required></div>
+      <div class="form-row"><label>Password</label><input type="password" id="password" required></div>
+      <button class="btn btn-primary" type="submit">Log in</button>
+    </form>
+    <p class="meta" style="margin-top:14px">No account yet? <a href="register.html">Sign up</a></p>
+    <p class="meta">Admin demo login: admin@marketplace.local / admin123</p>
+  </div>
+</main>
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+(async () => { await initPage(); if (CURRENT_USER) location.href = 'index.html'; })();
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({
+      email: document.getElementById('email').value,
+      password: document.getElementById('password').value
+    })});
+    location.href = 'index.html';
+  } catch (err) { toast(err.message); }
+});
+</script>
+</body>
+</html>

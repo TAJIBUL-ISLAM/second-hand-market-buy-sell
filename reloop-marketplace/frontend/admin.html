@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — ReLoop</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <h1>Admin dashboard</h1>
+  <div class="stat-grid" id="stats"></div>
+  <h2>Open disputes</h2>
+  <div id="disputes"></div>
+</main>
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+async function loadAnalytics() {
+  const a = await apiFetch('/admin/analytics');
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="num">${a.totalListings}</div><div class="label">Total listings</div></div>
+    <div class="stat-card"><div class="num">${a.activeListings}</div><div class="label">Active</div></div>
+    <div class="stat-card"><div class="num">${a.soldListings}</div><div class="label">Sold</div></div>
+    <div class="stat-card"><div class="num">${a.totalUsers}</div><div class="label">Users</div></div>
+    <div class="stat-card"><div class="num">${a.verifiedUsers}</div><div class="label">Verified sellers</div></div>
+    <div class="stat-card"><div class="num">${fmtPrice(a.revenue)}</div><div class="label">Platform GMV</div></div>
+    <div class="stat-card"><div class="num">${a.openDisputes}</div><div class="label">Open disputes</div></div>
+  `;
+}
+
+async function loadDisputes() {
+  const rows = await apiFetch('/admin/disputes');
+  const el = document.getElementById('disputes');
+  const open = rows.filter(d => d.status === 'open');
+  el.innerHTML = open.length ? open.map(d => `
+    <div class="panel">
+      <strong>${d.title}</strong> — ${fmtPrice(d.amount)}
+      <p class="meta">Raised: ${d.reason || '(no reason given)'}</p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="resolve(${d.id},'release')">Release to seller</button>
+        <button class="btn btn-danger btn-sm" onclick="resolve(${d.id},'refund')">Refund buyer</button>
+        <button class="btn btn-outline btn-sm" onclick="partial(${d.id})">Partial refund</button>
+      </div>
+    </div>
+  `).join('') : '<p class="meta">No open disputes. All clear!</p>';
+}
+
+async function resolve(id, resolution) {
+  const note = prompt('Resolution note (optional):') || '';
+  await apiFetch(`/admin/disputes/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution, note }) });
+  toast('Dispute resolved.');
+  loadDisputes(); loadAnalytics();
+}
+async function partial(id) {
+  const amt = prompt('Partial refund amount (₹):');
+  if (!amt) return;
+  await apiFetch(`/admin/disputes/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution: 'partial', partial_amount: amt }) });
+  toast('Partial refund recorded.');
+  loadDisputes(); loadAnalytics();
+}
+
+(async () => {
+  await initPage();
+  if (!CURRENT_USER || !CURRENT_USER.is_admin) { document.querySelector('main').innerHTML = '<p>Admins only.</p>'; return; }
+  loadAnalytics(); loadDisputes();
+})();
+</script>
+</body>
+</html>
