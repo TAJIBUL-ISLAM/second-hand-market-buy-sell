@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Listing — ReLoop</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main id="mainContent">Loading…</main>
+<footer class="site">ReLoop · Give it a second life.</footer>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+const id = new URLSearchParams(location.search).get('id');
+let listing = null;
+
+async function render() {
+  listing = await apiFetch('/listings/' + id);
+  const mine = CURRENT_USER && CURRENT_USER.id === listing.seller_id;
+  const shareUrl = encodeURIComponent(location.href);
+  const shareText = encodeURIComponent(`Check out "${listing.title}" on ReLoop`);
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="two-col" style="align-items:start">
+      <div>
+        ${listing.photo ? `<img src="${listing.photo}" style="width:100%;border-radius:10px;border:1px solid var(--line)">`
+          : `<div class="photo placeholder" style="aspect-ratio:4/3;border-radius:10px;border:1px solid var(--line)">No photo provided</div>`}
+        <div class="share-row">
+          <a href="https://wa.me/?text=${shareText}%20${shareUrl}" target="_blank">Share on WhatsApp</a>
+          <a href="https://www.facebook.com/sharer/sharer.php?u=${shareUrl}" target="_blank">Share on Facebook</a>
+          <a href="https://www.instagram.com/" target="_blank">Share on Instagram</a>
+        </div>
+      </div>
+      <div>
+        <span class="badge badge-${listing.status}">${listing.status}</span>
+        <span class="cat">${listing.category}</span>
+        <h1>${listing.title}</h1>
+        <div class="price" style="font-size:1.6rem">${fmtPrice(listing.price)}</div>
+        <p class="meta">${listing.condition_grade} · ${listing.location || 'Location not set'} · listed ${timeAgo(listing.created_at)}</p>
+        <p>${listing.description || ''}</p>
+        <p class="meta">Sold by <strong>${listing.seller_name}</strong> ${listing.seller_verified ? '<span class="verified-badge">✓ ID-verified seller</span>' : '(not yet ID-verified)'}</p>
+        <p><span class="co2-strip">🌱 Buying this used saves an estimated ${listing.co2_saved_kg}kg of CO₂ vs. new</span></p>
+
+        ${mine ? `<p class="meta">This is your listing. Manage it from your <a href="dashboard.html">dashboard</a>.</p>` : `
+        <div id="actionButtons" style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0">
+          <button class="btn btn-primary" id="buyBtn">Buy now (secure escrow)</button>
+          <button class="btn btn-outline" id="offerBtn">Make an offer</button>
+          <button class="btn btn-outline" id="wishlistBtn">♡ Save to wishlist</button>
+          <button class="btn btn-outline" id="messageBtn">Message seller</button>
+        </div>
+        <div id="offerPanel" class="panel" style="display:none">
+          <h3>Make an offer</h3>
+          <div class="form-row"><label>Your offer (₹)</label><input type="number" id="offerAmount"></div>
+          <button class="btn btn-primary btn-sm" id="submitOffer">Submit offer</button>
+        </div>
+        <div id="buyPanel" class="panel" style="display:none">
+          <h3>Checkout</h3>
+          <div class="form-row">
+            <label>Delivery option</label>
+            <select id="deliveryType"><option value="delivery">Ship / delivery</option><option value="local_pickup">Local pickup (cash or in-person)</option></select>
+          </div>
+          <p class="meta">Your payment is held in escrow until you confirm receipt of the item — full buyer protection.</p>
+          <button class="btn btn-primary btn-sm" id="confirmBuy">Pay ${fmtPrice(listing.price)} now</button>
+        </div>
+        `}
+      </div>
+    </div>
+  `;
+
+  if (!mine) attachActions();
+}
+
+function attachActions() {
+  document.getElementById('offerBtn').addEventListener('click', () => {
+    if (!requireLogin()) return;
+    document.getElementById('offerPanel').style.display = 'block';
+    document.getElementById('buyPanel').style.display = 'none';
+  });
+  document.getElementById('buyBtn').addEventListener('click', () => {
+    if (!requireLogin()) return;
+    document.getElementById('buyPanel').style.display = 'block';
+    document.getElementById('offerPanel').style.display = 'none';
+  });
+  document.getElementById('wishlistBtn').addEventListener('click', async () => {
+    if (!requireLogin()) return;
+    await apiFetch('/wishlist', { method: 'POST', body: JSON.stringify({ listing_id: listing.id }) });
+    toast('Added to wishlist.');
+  });
+  document.getElementById('messageBtn').addEventListener('click', () => {
+    if (!requireLogin()) return;
+    location.href = `messages.html?with=${listing.seller_id}&listing=${listing.id}`;
+  });
+  document.getElementById('submitOffer').addEventListener('click', async () => {
+    const amount = document.getElementById('offerAmount').value;
+    if (!amount) return toast('Enter an offer amount.');
+    await apiFetch('/offers', { method: 'POST', body: JSON.stringify({ listing_id: listing.id, amount }) });
+    toast('Offer sent to seller. Check your dashboard for their response.');
+    document.getElementById('offerPanel').style.display = 'none';
+  });
+  document.getElementById('confirmBuy').addEventListener('click', async () => {
+    try {
+      const deliveryType = document.getElementById('deliveryType').value;
+      const result = await apiFetch('/payments/checkout', { method: 'POST', body: JSON.stringify({ listing_id: listing.id, delivery_type: deliveryType }) });
+      toast(result.message);
+      setTimeout(() => location.href = 'dashboard.html', 1200);
+    } catch (e) { toast(e.message); }
+  });
+}
+
+(async () => { await initPage(); render(); })();
+</script>
+</body>
+</html>

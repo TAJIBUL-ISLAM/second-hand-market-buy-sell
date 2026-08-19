@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Messages — ReLoop</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+.msg-layout { display: grid; grid-template-columns: 260px 1fr; gap: 18px; }
+@media (max-width:700px) { .msg-layout { grid-template-columns: 1fr; } }
+.inbox-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+.inbox-item:hover, .inbox-item.active { background: var(--paper-card); }
+.thread { display: flex; flex-direction: column; height: 60vh; overflow-y: auto; padding: 10px; background: var(--paper-card); border:1px solid var(--line); border-radius: var(--radius); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Messages</h1>
+  <div class="msg-layout">
+    <div class="panel" id="inboxPanel"><h3>Conversations</h3><div id="inboxList"></div></div>
+    <div>
+      <div class="thread" id="thread"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="msgInput" placeholder="Type a message…" style="flex:1;padding:9px 12px;border-radius:6px;border:1px solid var(--line)">
+        <button class="btn btn-primary" id="sendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+let otherId = params.get('with');
+const listingId = params.get('listing');
+
+async function loadInbox() {
+  const rows = await apiFetch('/messages/inbox');
+  const list = document.getElementById('inboxList');
+  list.innerHTML = rows.length ? '' : '<p class="meta">No conversations yet.</p>';
+  rows.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'inbox-item' + (String(r.other_id) === String(otherId) ? ' active' : '');
+    item.innerHTML = `<strong>${r.other_name}</strong><br><span class="meta">${r.body.slice(0,40)}</span>`;
+    item.addEventListener('click', () => { otherId = r.other_id; loadThread(); loadInbox(); });
+    list.appendChild(item);
+  });
+}
+
+async function loadThread() {
+  if (!otherId) {
+    document.getElementById('thread').innerHTML = '<p class="meta" style="margin:auto">Select a conversation.</p>';
+    return;
+  }
+  let url = '/messages/conversation/' + otherId;
+  if (listingId) url += '?listing_id=' + listingId;
+  const rows = await apiFetch(url);
+  const thread = document.getElementById('thread');
+  thread.innerHTML = rows.map(m => `<div class="msg-bubble ${m.sender_id === CURRENT_USER.id ? 'msg-mine' : 'msg-theirs'}">${m.body}</div>`).join('')
+    || '<p class="meta" style="margin:auto">Say hello 👋</p>';
+  thread.scrollTop = thread.scrollHeight;
+}
+
+document.getElementById('sendBtn').addEventListener('click', async () => {
+  const input = document.getElementById('msgInput');
+  if (!input.value.trim() || !otherId) return;
+  await apiFetch('/messages', { method: 'POST', body: JSON.stringify({ receiver_id: otherId, listing_id: listingId || null, body: input.value }) });
+  input.value = '';
+  loadThread();
+});
+document.getElementById('msgInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('sendBtn').click(); });
+
+(async () => {
+  await initPage();
+  if (!requireLogin()) return;
+  await loadInbox();
+  await loadThread();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — ReLoop</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main>
+  <h1>Your dashboard</h1>
+  <div class="tabs">
+    <button class="active" data-tab="listings">My listings</button>
+    <button data-tab="offers">Offers received</button>
+    <button data-tab="myoffers">Offers I've made</button>
+    <button data-tab="transactions">Purchases &amp; sales</button>
+    <button data-tab="wishlist">Wishlist</button>
+  </div>
+  <div id="tabContent"></div>
+</main>
+
+<script src="js/api.js"></script>
+<script src="js/nav.js"></script>
+<script>
+let myListings = [];
+
+async function showTab(tab) {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  const el = document.getElementById('tabContent');
+  el.innerHTML = 'Loading…';
+
+  if (tab === 'listings') {
+    myListings = await apiFetch('/listings/mine/list');
+    el.innerHTML = myListings.length ? `<div class="listing-grid">${myListings.map(listingCard).join('')}</div>`
+      : emptyState('No listings yet', 'Start selling something you no longer need.', 'sell.html', 'List an item');
+    myListings.forEach(l => {
+      const markBtn = document.getElementById('mark-' + l.id);
+      if (markBtn) markBtn.addEventListener('click', async () => {
+        await apiFetch('/listings/' + l.id, { method: 'PUT', body: JSON.stringify({ status: l.status === 'active' ? 'removed' : 'active' }) });
+        showTab('listings');
+      });
+    });
+  }
+
+  if (tab === 'offers') {
+    const mine = await apiFetch('/listings/mine/list');
+    let rows = [];
+    for (const l of mine) {
+      const offers = await apiFetch('/offers/listing/' + l.id);
+      offers.forEach(o => rows.push({ ...o, listingTitle: l.title }));
+    }
+    el.innerHTML = rows.length ? rows.map(o => `
+      <div class="panel">
+        <strong>${o.listingTitle}</strong> — offer of ${fmtPrice(o.amount)} from ${o.buyer_name}
+        <span class="badge badge-${o.status === 'accepted' ? 'released' : o.status === 'rejected' ? 'disputed' : 'escrow'}">${o.status}</span>
+        ${o.status === 'pending' ? `
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="respondOffer(${o.id},'accept')">Accept</button>
+            <button class="btn btn-outline btn-sm" onclick="counterOffer(${o.id})">Counter</button>
+            <button class="btn btn-danger btn-sm" onclick="respondOffer(${o.id},'reject')">Reject</button>
+          </div>` : ''}
+      </div>
+    `).join('') : emptyState('No offers yet', 'Offers buyers make on your listings will show up here.');
+  }
+
+  if (tab === 'myoffers') {
+    const rows = await apiFetch('/offers/mine');
+    el.innerHTML = rows.length ? rows.map(o => `
+      <div class="panel">
+        <strong>${o.title}</strong> — you offered ${fmtPrice(o.amount)} (listed at ${fmtPrice(o.listing_price)})
+        <span class="badge badge-${o.status === 'accepted' ? 'released' : o.status === 'rejected' ? 'disputed' : 'escrow'}">${o.status}</span>
+        ${o.status === 'countered' ? `<p class="meta">Seller countered with ${fmtPrice(o.counter_amount)}</p>
+          <button class="btn btn-primary btn-sm" onclick="respondOffer(${o.id},'accept')">Accept counter</button>
+          <button class="btn btn-danger btn-sm" onclick="respondOffer(${o.id},'reject')">Reject</button>` : ''}
+      </div>
+    `).join('') : emptyState('No offers made yet', 'Browse listings and make an offer to negotiate a price.', 'index.html', 'Browse listings');
+  }
+
+  if (tab === 'transactions') {
+    const rows = await apiFetch('/payments/mine');
+    el.innerHTML = rows.length ? rows.map(t => `
+      <div class="panel">
+        <strong>${t.title}</strong> — ${fmtPrice(t.amount)} · ${t.delivery_type.replace('_',' ')}
+        <span class="badge badge-${t.status === 'escrow' ? 'escrow' : t.status === 'disputed' ? 'disputed' : 'released'}">${t.status}</span>
+        ${t.buyer_id === CURRENT_USER.id && t.status === 'escrow' ? `
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="confirmReceipt(${t.id})">Confirm receipt (release funds)</button>
+            <button class="btn btn-danger btn-sm" onclick="raiseDispute(${t.id})">Report a problem</button>
+          </div>` : ''}
+      </div>
+    `).join('') : emptyState('No transactions yet', 'Your purchases and sales will appear here.');
+  }
+
+  if (tab === 'wishlist') {
+    const rows = await apiFetch('/wishlist');
+    el.innerHTML = rows.length ? `<div class="listing-grid">${rows.map(listingCard).join('')}</div>`
+      : emptyState('Your wishlist is empty', 'Tap the heart on any listing to save it here.', 'index.html', 'Browse listings');
+  }
+}
+
+function listingCard(l) {
+  return `<a href="listing.html?id=${l.id}" class="tag-card">
+    ${l.photo ? `<img class="photo" src="${l.photo}">` : `<div class="photo placeholder">No photo</div>`}
+    <div class="body">
+      <span class="cat">${l.category}</span>
+      <h3>${l.title}</h3>
+      <div class="price">${fmtPrice(l.price)}</div>
+      <span class="badge badge-${l.status}">${l.status}</span>
+    </div>
+  </a>`;
+}
+
+function emptyState(title, sub, href, label) {
+  return `<div class="empty-state"><h3>${title}</h3><p>${sub}</p>${href ? `<a class="btn btn-primary" href="${href}">${label}</a>` : ''}</div>`;
+}
+
+async function respondOffer(id, action) {
+  await apiFetch(`/offers/${id}/respond`, { method: 'POST', body: JSON.stringify({ action }) });
+  toast(action === 'accept' ? 'Offer accepted.' : 'Offer rejected.');
+  showTab(document.querySelector('.tabs button.active').dataset.tab);
+}
+async function counterOffer(id) {
+  const amt = prompt('Counter amount (₹):');
+  if (!amt) return;
+  await apiFetch(`/offers/${id}/counter`, { method: 'POST', body: JSON.stringify({ counter_amount: amt }) });
+  toast('Counter-offer sent.');
+  showTab('offers');
+}
+async function confirmReceipt(txId) {
+  const r = await apiFetch(`/payments/${txId}/confirm-receipt`, { method: 'POST' });
+  toast(r.message);
+  showTab('transactions');
+}
+async function raiseDispute(txId) {
+  const reason = prompt('Briefly describe the problem:');
+  if (!reason) return;
+  await apiFetch(`/payments/${txId}/dispute`, { method: 'POST', body: JSON.stringify({ reason }) });
+  toast('Dispute filed. Our admin team will review and mediate.');
+  showTab('transactions');
+}
+
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+(async () => {
+  await initPage();
+  if (!requireLogin()) return;
+  showTab('listings');
+})();
+</script>
+</body>
+</html>
